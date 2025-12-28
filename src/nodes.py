@@ -77,7 +77,7 @@ def writer_node(state: AgentState) -> dict:
     """
     
     new_draft = llm.invoke(prompt).content
-    return {"draft": new_draft, "messages": ["Draft Updated"]}
+    return {"draft": new_draft, "messages": ["✍️  Draft Updated"]}
 
 def validator_node(state: AgentState) -> dict:
     """
@@ -98,5 +98,12 @@ def validator_node(state: AgentState) -> dict:
     
     return {
         "is_valid": is_valid, 
-        "messages": [f"Validator: {'Passed' if is_valid else 'Failed - Re-looping'}"]
+        "messages": [f"🛡️ Validator: {'Passed' if is_valid else 'Failed - Re-looping'}"]
     }
+
+def human_review_node(state: AgentState):
+    """
+    Passive node to stop the graph for human input.
+    """
+    print("--- AWAITING HUMAN INPUT ---")
+    return {}
