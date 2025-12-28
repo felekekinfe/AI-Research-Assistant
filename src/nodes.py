@@ -45,3 +45,36 @@ def academic_research_node(state: AgentState) -> dict:
         "research_data": f"ACADEMIC RESULTS:\n{results}\n",
         "messages": ["🎓 Gathered peer-reviewed data via Semantic Scholar"]
     }
+def writer_node(state: AgentState) -> dict:
+    """
+    Writer that synthesizes new data into the existing draft.
+    """
+    current_draft = state.get("draft", "No draft yet.")
+    research_data = state["research_data"]
+    task = state["task"]
+    feedback = state.get("feedback", "")
+
+    print(f"--- WRITING/REVISING DRAFT ---")
+
+    prompt = f"""
+    You are a technical research writer.
+    
+    Task: {task}
+    Current Draft:
+    {current_draft}
+    
+    New Research Data:
+    {research_data}
+    
+    User Feedback (if any):
+    {feedback}
+    
+    INSTRUCTIONS:
+    1. Integrate the 'New Research Data' into the 'Current Draft'. 
+    2. Do NOT just append it. Rewrite sections if necessary to improve flow.
+    3. Ensure the text is cohesive and comprehensive.
+    4. If the draft is empty, write a structured initial draft.
+    """
+    
+    new_draft = llm.invoke(prompt).content
+    return {"draft": new_draft, "messages": ["Draft Updated"]}
