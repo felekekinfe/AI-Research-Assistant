@@ -35,3 +35,13 @@ def web_research_node(state: AgentState) -> dict:
     duration = time.time() - start_time
     logger.info(json.dumps({"node": "web_researcher", "status": "completed", "duration": duration, "output_summary": len(output["research_data"])}))
     return output
+def academic_research_node(state: AgentState) -> dict:
+    """Node 2: Academic Research via Semantic Scholar"""
+    query = state.get("refined_query") or state["task"]
+    print(f"--- SCHOLAR ACADEMIC RESEARCH: {query} ---")
+    
+    results = scholar_tool.invoke(query)
+    return {
+        "research_data": f"ACADEMIC RESULTS:\n{results}\n",
+        "messages": ["🎓 Gathered peer-reviewed data via Semantic Scholar"]
+    }
