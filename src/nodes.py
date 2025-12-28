@@ -78,3 +78,25 @@ def writer_node(state: AgentState) -> dict:
     
     new_draft = llm.invoke(prompt).content
     return {"draft": new_draft, "messages": ["Draft Updated"]}
+
+def validator_node(state: AgentState) -> dict:
+    """
+    Checks if the draft meets the user's task requirements.
+    """
+    draft = state["draft"]
+    task = state["task"]
+    
+    prompt = f"""
+    Task: {task}
+    Draft: {draft}
+    
+    Is this draft comprehensive and accurate enough to show to the user? 
+    Reply strictly with 'PASS' or 'FAIL'.
+    """
+    response = llm.invoke(prompt).content.upper()
+    is_valid = "PASS" in response
+    
+    return {
+        "is_valid": is_valid, 
+        "messages": [f"Validator: {'Passed' if is_valid else 'Failed - Re-looping'}"]
+    }
