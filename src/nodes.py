@@ -107,3 +107,24 @@ def human_review_node(state: AgentState):
     """
     print("--- AWAITING HUMAN INPUT ---")
     return {}
+
+def refiner_node(state: AgentState) -> dict:
+    """
+    Analyzes feedback to generate a specific fix query.
+    """
+    feedback = state["feedback"]
+    draft = state["draft"]
+    
+    prompt = f"""
+    The user rejected the draft.
+    Draft snippet: {draft}...
+    User Feedback: {feedback}
+    
+    What specific search query will solve this problem?
+    """
+    refined_query = llm.invoke(prompt).content
+    
+    return {
+        "refined_query": refined_query, 
+        "messages": [f"🔄 Refiner: Planning search for '{refined_query}'"]
+    }
