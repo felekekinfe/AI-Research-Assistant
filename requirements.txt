@@ -7,3 +7,6 @@ python-dotenv
 duckduckgo-search
 aiosqlite
 ddgs
+langgraph-cli
+langsmith
+"langgraph-cli[inmem]"
