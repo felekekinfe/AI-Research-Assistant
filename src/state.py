@@ -1,4 +1,6 @@
-from typing import Annotated, TypedDict, List, Optional
+
+
+from typing import TypedDict, Annotated, List, Optional
 import operator
 
 class AgentState(TypedDict):
@@ -9,4 +11,4 @@ class AgentState(TypedDict):
     feedback: Optional[str]
     revision_count: int
     refined_query: Optional[str]
-    messages: Annotated[list, operator.add] 
+    messages: Annotated[list, operator.add]

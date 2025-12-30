@@ -1,130 +1,178 @@
 from langchain_community.tools import DuckDuckGoSearchRun
-from src.config import llm
+from langchain_community.tools.semanticscholar.tool import SemanticScholarQueryRun
+from src.config import get_llm
 from src.state import AgentState
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_community.tools.semantic_scholar import SemanticScholarQueryRun
-import logging
-import time
-import json
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('execution_logs.json')
-file_handler.setFormatter(logging.Formatter('%(message)s'))
-logger.addHandler(file_handler)
-
-
-# Initialize tools
-tavily_tool = TavilySearchResults(k=3) 
-scholar_tool = SemanticScholarQueryRun()
-
+# Initialize search tools
+web_search_tool = DuckDuckGoSearchRun()
+academic_search_tool = SemanticScholarQueryRun()
 
 
 def web_research_node(state: AgentState) -> dict:
-    start_time = time.time()
+    """
+    Perform web research using DuckDuckGo.
+
+    Retrieves the query from refined_query (if present) or falls back to the original task.
+    Appends results to research_data and logs a message.
+    """
     query = state.get("refined_query") or state["task"]
-    logger.info(json.dumps({"node": "web_researcher", "status": "started", "query": query}))
-    
-    results = tavily_tool.invoke(query)
-    output = {
-        "research_data": f"WEB RESULTS:\n{results}\n",
-        "messages": [" Gathered deep web insights via Tavily"]
-    }
-    
-    duration = time.time() - start_time
-    logger.info(json.dumps({"node": "web_researcher", "status": "completed", "duration": duration, "output_summary": len(output["research_data"])}))
-    return output
-def academic_research_node(state: AgentState) -> dict:
-    """Node 2: Academic Research via Semantic Scholar"""
-    query = state.get("refined_query") or state["task"]
-    print(f"--- SCHOLAR ACADEMIC RESEARCH: {query} ---")
-    
-    results = scholar_tool.invoke(query)
+    print(f"--- DUCKDUCKGO WEB RESEARCH: {query} ---")
+
+    try:
+        results = web_search_tool.run(query)
+    except Exception as e:
+        results = f"Search failed: {e}"
+
     return {
-        "research_data": f"ACADEMIC RESULTS:\n{results}\n",
-        "messages": ["🎓 Gathered peer-reviewed data via Semantic Scholar"]
+        "research_data": f"\n--- WEB RESULTS ({query}) ---\n{results}\n",
+        "messages": [f"🌐 Web Search completed: {query}"],
     }
+
+
+
+def academic_research_node(state: AgentState) -> dict:
+    """
+    Perform academic research using Semantic Scholar.
+
+    Handles potential flakiness of the tool with appropriate fallbacks.
+    """
+    query = state.get("refined_query") or state["task"]
+    print(f"--- ACADEMIC RESEARCH: {query} ---")
+
+    try:
+        results = academic_search_tool.run(query)
+        if not results or "No results found" in results:
+            results = "No specific academic papers found."
+    except Exception as e:
+        print(f"Academic tool error: {e}")
+        results = "Academic search unavailable."
+
+    return {
+        "research_data": f"\n--- ACADEMIC RESULTS ({query}) ---\n{results}\n",
+        "messages": [f"🎓 Academic Search completed: {query}"],
+    }
+
+
+
 def writer_node(state: AgentState) -> dict:
     """
-    Writer that synthesizes new data into the existing draft.
+    Synthesize collected research into a comprehensive draft report.
+
+    Incorporates previous draft and any user feedback for iterative improvement.
     """
-    current_draft = state.get("draft", "No draft yet.")
-    research_data = state["research_data"]
+    llm = get_llm()
     task = state["task"]
+    research_data = state.get("research_data", "")
+    current_draft = state.get("draft", "No previous draft.")
     feedback = state.get("feedback", "")
 
-    print(f"--- WRITING/REVISING DRAFT ---")
+    print("--- WRITING/UPDATING DRAFT ---")
 
     prompt = f"""
-    You are a technical research writer.
-    
-    Task: {task}
-    Current Draft:
-    {current_draft}
-    
-    New Research Data:
+    You are an expert technical writer.
+
+    **Original Task:** {task}
+
+    **Collected Research Data:**
     {research_data}
-    
-    User Feedback (if any):
+
+    **Previous Draft (if any):**
+    {current_draft}
+
+    **User Feedback (if any):**
     {feedback}
-    
-    INSTRUCTIONS:
-    1. Integrate the 'New Research Data' into the 'Current Draft'. 
-    2. Do NOT just append it. Rewrite sections if necessary to improve flow.
-    3. Ensure the text is cohesive and comprehensive.
-    4. If the draft is empty, write a structured initial draft.
+
+    **Instructions:**
+    1. Produce a comprehensive, well-structured research report in Markdown format (use headers, bullet points, etc.).
+    2. Strictly address any provided feedback.
+    3. Synthesize information into a cohesive narrative; do not merely append new content.
+    4. Cite sources where relevant (e.g., [Source: Web] or [Source: Academic]).
     """
-    
-    new_draft = llm.invoke(prompt).content
-    return {"draft": new_draft, "messages": ["Draft Updated"]}
+
+    response = llm.invoke(prompt)
+
+    return {
+        "draft": response.content,
+        "messages": ["✍️ Draft written/updated"],
+    }
+
+
 
 def validator_node(state: AgentState) -> dict:
     """
-    Checks if the draft meets the user's task requirements.
+    Validate the quality of the current draft against key criteria.
+
+    Returns a boolean is_valid flag used for conditional routing.
     """
-    draft = state["draft"]
+    llm = get_llm()
     task = state["task"]
-    
+    draft = state["draft"]
+
     prompt = f"""
-    Task: {task}
-    Draft: {draft}
-    
-    Is this draft comprehensive and accurate enough to show to the user? 
-    Reply strictly with 'PASS' or 'FAIL'.
+    You are a rigorous Quality Assurance Editor.
+
+    **Task:** {task}
+    **Draft (truncated for evaluation):** {draft[:3000]}
+
+    **Evaluation Criteria:**
+    1. Does the draft directly and fully address the user's task?
+    2. Is the content substantial and non-empty?
+    3. Is the draft logically structured and well-organized?
+
+    Respond strictly with "PASS" or "FAIL" only.
     """
-    response = llm.invoke(prompt).content.upper()
-    is_valid = "PASS" in response
-    
+
+    try:
+        response = llm.invoke(prompt).content.strip().upper()
+        is_valid = "PASS" in response
+    except Exception:
+        is_valid = True  # Conservative fallback to allow human review
+
     return {
-        "is_valid": is_valid, 
-        "messages": [f"Validator: {'Passed' if is_valid else 'Failed - Re-looping'}"]
+        "is_valid": is_valid,
+        "messages": [f"⚖️ Validator: {'Passed' if is_valid else 'Failed – revision required'}"],
     }
 
-def human_review_node(state: AgentState):
-    """
-    Passive node to stop the graph for human input.
-    """
-    print("--- AWAITING HUMAN INPUT ---")
-    return {}
+
 
 def refiner_node(state: AgentState) -> dict:
     """
-    Analyzes feedback to generate a specific fix query.
+    Generate a refined search query when validation fails or feedback is provided.
+
+    Increments revision_count to prevent infinite loops.
     """
-    feedback = state["feedback"]
-    draft = state["draft"]
-    
+    llm = get_llm()
+    task = state["task"]
+    feedback = state.get("feedback", "Draft failed validation.")
+
+    current_rev = state.get("revision_count", 0)
+    new_rev = current_rev + 1
+
     prompt = f"""
-    The user rejected the draft.
-    Draft snippet: {draft}...
-    User Feedback: {feedback}
-    
-    What specific search query will solve this problem?
+    The current research draft requires improvement.
+
+    **Original Task:** {task}
+    **Issue/Feedback:** {feedback}
+
+    Generate one concise, specific search query (different from previous queries) that targets missing information or resolves the identified issue.
+
+    Output only the query string.
     """
-    refined_query = llm.invoke(prompt).content
-    
+
+    refined_query = llm.invoke(prompt).content.strip().strip('"')
+
     return {
-        "refined_query": refined_query, 
-        "messages": [f"Refiner: Planning search for '{refined_query}'"]
+        "refined_query": refined_query,
+        "revision_count": new_rev,
+        "messages": [f"🔄 Refiner: Generated new query '{refined_query}' (Revision {new_rev})"],
     }
+
+
+
+def human_review_node(state: AgentState) -> dict:
+    """
+    Placeholder node for human-in-the-loop interruption.
+
+    No state updates are performed here; the graph interrupts before this node.
+    """
+    return {"messages": []}
